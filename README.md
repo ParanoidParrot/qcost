@@ -2,7 +2,7 @@
 
 > Query cost predictor for your PR pipeline. Know the execution cost of every SQL query before it reaches production.
 
-[![CI](https://github.com/your-username/qcost/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/qcost/actions)
+[![CI](https://github.com/ParanoidParrot/qcost/actions/workflows/ci.yml/badge.svg)](https://github.com/ParanoidParrot/qcost/actions)
 
 [![PyPI](https://img.shields.io/pypi/v/qcost)](https://pypi.org/project/qcost/)
 

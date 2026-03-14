@@ -1,6 +1,6 @@
 name: 'QCost'
 description: 'SQL query cost predictor for PRs — catches expensive queries before they ship'
-author: 'your-username'
+#author: 'anuradhasrinivas'
 
 branding:
   icon: 'database'
