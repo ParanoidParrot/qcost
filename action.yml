@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-action.json
+
 name: 'QCost'
 description: 'SQL query cost predictor for PRs — catches expensive queries before they ship'
 #author: 'anuradhasrinivas'
@@ -40,13 +42,16 @@ inputs:
     required: false
     default: ${{ github.token }}
 
-outputs:
+    outputs:
   total-score:
     description: 'Sum of all query cost scores'
+    value: ${{ steps.qcost.outputs.total-score }}
   gate-passed:
     description: 'true if all queries are below the fail threshold'
+    value: ${{ steps.qcost.outputs.gate-passed }}
   report:
     description: 'Full markdown/JSON report as a string'
+    value: ${{ steps.qcost.outputs.report }}
 
 runs:
   using: 'composite'
