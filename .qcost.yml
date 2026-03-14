@@ -1,0 +1,32 @@
+db:
+  type: postgres
+  # Optional: set DSN to enable live EXPLAIN mode.
+  # dsn: "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
+
+thresholds:
+  # Score 0–100. Queries at or above fail_score will block the PR gate.
+  fail_score: 75
+  # Queries at or above warn_score get a warning but won't block.
+  warn_score: 40
+  # Flag result sets estimated to return more than this many rows.
+  max_rows: 500000
+
+scan:
+  include:
+    - "**/*.sql"
+    - "**/migrations/**/*.py"
+    - "**/migrations/**/*.go"
+    - "**/migrations/**/*.ts"
+    - "**/db/**/*.py"
+    - "**/repository/**/*.py"
+  exclude:
+    - "vendor/**"
+    - "node_modules/**"
+    - "**/*_test.py"
+    - "**/test_*.py"
+    - "**/testdata/**"
+
+output:
+  # text | json | markdown
+  format: text
+  verbose: false

@@ -1,0 +1,91 @@
+name: 'QCost'
+description: 'SQL query cost predictor for PRs — catches expensive queries before they ship'
+author: 'your-username'
+
+branding:
+  icon: 'database'
+  color: 'orange'
+
+inputs:
+  config:
+    description: 'Path to .qcost.yml'
+    required: false
+    default: '.qcost.yml'
+  db-type:
+    description: 'Database type: postgres | mysql | sqlite'
+    required: false
+    default: 'postgres'
+  dsn:
+    description: 'Database DSN for live EXPLAIN mode (optional)'
+    required: false
+    default: ''
+  format:
+    description: 'Output format: markdown | json | text'
+    required: false
+    default: 'markdown'
+  base-ref:
+    description: 'Base git ref to diff against'
+    required: false
+    default: ''
+  fail-on-high:
+    description: 'Exit 1 when any query exceeds the fail_score threshold'
+    required: false
+    default: 'true'
+  post-comment:
+    description: 'Post results as a PR comment'
+    required: false
+    default: 'true'
+  github-token:
+    description: 'GitHub token for posting PR comments'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  total-score:
+    description: 'Sum of all query cost scores'
+  gate-passed:
+    description: 'true if all queries are below the fail threshold'
+  report:
+    description: 'Full markdown/JSON report as a string'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: pip
+        cache-dependency-path: '${{ github.action_path }}/requirements.txt'
+
+    - name: Install QCost dependencies
+      shell: bash
+      run: pip install -r ${{ github.action_path }}/requirements.txt --quiet
+
+    - name: Determine base ref
+      id: base-ref
+      shell: bash
+      run: |
+        BASE="${{ inputs.base-ref }}"
+        if [ -z "$BASE" ]; then
+          BASE="${{ github.event.pull_request.base.ref }}"
+        fi
+        if [ -z "$BASE" ]; then
+          BASE="origin/main"
+        fi
+        echo "ref=$BASE" >> $GITHUB_OUTPUT
+
+    - name: Run QCost
+      shell: bash
+      env:
+        INPUT_CONFIG:       ${{ inputs.config }}
+        INPUT_DB-TYPE:      ${{ inputs.db-type }}
+        INPUT_DSN:          ${{ inputs.dsn }}
+        INPUT_FORMAT:       ${{ inputs.format }}
+        INPUT_BASE-REF:     ${{ steps.base-ref.outputs.ref }}
+        INPUT_FAIL-ON-HIGH: ${{ inputs.fail-on-high }}
+        INPUT_POST-COMMENT: ${{ inputs.post-comment }}
+        INPUT_GITHUB-TOKEN: ${{ inputs.github-token }}
+        GITHUB_TOKEN:       ${{ inputs.github-token }}
+        PR_NUMBER:          ${{ github.event.pull_request.number }}
+      run: python ${{ github.action_path }}/action/action_runner.py

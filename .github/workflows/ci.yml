@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags:     ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check qcost tests
+
+      - name: Type check
+        run: mypy qcost
+
+      - name: Run tests
+        run: pytest tests/ -v --cov=qcost --cov-report=term-missing
+
+  # Self-test: run QCost on its own test SQL files.
+  self-test:
+    name: Self-test (QCost on own code)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Analyze test data
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from qcost import run_file, build_report
+          from qcost.config import Config
+          cfg = Config()
+          results = run_file('testdata/postgres/bad_queries.sql', cfg)
+          report = build_report(results, cfg)
+          print(f'Found {len(results)} queries, total score {report.total_cost}')
+          assert len(results) > 0, 'Expected at least one query'
+          "
