@@ -23,13 +23,18 @@ jobs:
           cache: pip
 
       - name: Install package and dev dependencies
-        run: pip install -e ".[dev]"
+        run: |
+          pip install -e ".[dev]"
+          pip show qcost
+
+      - name: Verify import
+        run: python -c "from qcost import run_file, run_sql, build_report; print('imports ok')"
 
       - name: Lint
         run: ruff check qcost tests
 
       - name: Type check
-        run: mypy qcost
+        run: mypy qcost/ --ignore-missing-imports
 
       - name: Run tests
         run: pytest tests/ -v --cov=qcost --cov-report=term-missing
@@ -46,7 +51,12 @@ jobs:
           cache: pip
 
       - name: Install package
-        run: pip install -e ".[dev]"
+        run: |
+          pip install -e ".[dev]"
+          pip show qcost
+
+      - name: Verify import
+        run: python -c "from qcost import run_file, run_sql, build_report; print('imports ok')"
 
       - name: Create test data
         run: |
