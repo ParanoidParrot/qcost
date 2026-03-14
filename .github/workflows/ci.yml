@@ -22,9 +22,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install dependencies
-        run: |
-          pip install -e ".[dev]"
+      - name: Install package and dev dependencies
+        run: pip install -e ".[dev]"
 
       - name: Lint
         run: ruff check qcost tests
@@ -35,27 +34,32 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v --cov=qcost --cov-report=term-missing
 
-  # Self-test: run QCost on its own test SQL files.
   self-test:
-    name: Self-test (QCost on own code)
+    name: Self-test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
 
-      - run: pip install -r requirements.txt
+      - name: Install package
+        run: pip install -e ".[dev]"
 
-      - name: Analyze test data
+      - name: Create test data
+        run: |
+          mkdir -p testdata/postgres
+          cat > testdata/postgres/bad_queries.sql << 'SQL'
+          SELECT * FROM users;
+          SELECT u.name, o.total FROM users u, orders o WHERE u.id = 1;
+          SELECT id FROM users WHERE email LIKE '%@gmail.com';
+          SQL
+
+      - name: Run self-test
         run: |
           python -c "
-          import sys
-          sys.path.insert(0, '.')
           from qcost import run_file, build_report
           from qcost.config import Config
           cfg = Config()
@@ -63,4 +67,5 @@ jobs:
           report = build_report(results, cfg)
           print(f'Found {len(results)} queries, total score {report.total_cost}')
           assert len(results) > 0, 'Expected at least one query'
+          print('Self-test passed.')
           "

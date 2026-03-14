@@ -8,20 +8,22 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-import pytest
+import sqlglot
 
 from qcost.rules.ast_rules import (
-    rule_select_star, rule_full_table_scan, rule_cartesian_join,
-    rule_leading_wildcard_like, rule_function_on_column_in_where,
-    rule_subquery_in_where, rule_order_without_limit, rule_or_in_where,
+    rule_select_star,
+    rule_full_table_scan,
+    rule_cartesian_join,
+    rule_leading_wildcard_like,
+    rule_function_on_column_in_where,
+    rule_subquery_in_where,
+    rule_order_without_limit,
+    rule_or_in_where,
 )
-from qcost.models import CostTier, DBType
+from qcost.models import CostTier
 from qcost.analyzer import run_sql, build_report
 from qcost.config import Config
 from qcost.extractors.source import from_file
-
-
-import sqlglot
 
 
 def parse(sql: str, dialect: str = "postgres"):
@@ -64,7 +66,6 @@ class TestFullTableScan:
 
 class TestCartesianJoin:
     def test_fires_on_join_without_on(self):
-        # sqlglot parses "FROM a, b" as a cross join.
         issues = rule_cartesian_join(
             parse("SELECT * FROM users u, orders o"), "postgres"
         )
@@ -133,6 +134,22 @@ class TestOrderWithoutLimit:
         assert not any(i.code == "ORDER_BY_NO_LIMIT" for i in issues)
 
 
+class TestOrInWhere:
+    def test_fires_on_or(self):
+        issues = rule_or_in_where(
+            parse("SELECT id FROM products WHERE category = 'shoes' OR category = 'bags'"),
+            "postgres",
+        )
+        assert any(i.code == "OR_IN_WHERE" for i in issues)
+
+    def test_silent_without_or(self):
+        issues = rule_or_in_where(
+            parse("SELECT id FROM products WHERE category = 'shoes'"),
+            "postgres",
+        )
+        assert not any(i.code == "OR_IN_WHERE" for i in issues)
+
+
 # ── Analyzer integration tests ────────────────────────────────────────────────
 
 class TestAnalyzer:
@@ -154,7 +171,6 @@ class TestAnalyzer:
         assert result.tier in (CostTier.HIGH, CostTier.CRITICAL, CostTier.MEDIUM)
 
     def test_multiple_issues_add_up(self):
-        # SELECT * + no WHERE + leading wildcard — should score CRITICAL.
         result = run_sql(
             "SELECT * FROM users WHERE email LIKE '%@example.com'",
             "<test>", self._cfg()
