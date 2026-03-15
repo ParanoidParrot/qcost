@@ -1,5 +1,4 @@
 # Python packaging artifacts
-*.egg-info/
 dist/
 build/
 __pycache__/
@@ -7,3 +6,5 @@ __pycache__/
 .pytest_cache/
 .coverage
 .vscode
+qcost.egg-info/
+*.egg-info/
