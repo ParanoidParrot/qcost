@@ -1,6 +1,6 @@
 """
 qcost.analyzer
-~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
 Orchestrates the full analysis pipeline:
 
     source file
@@ -9,18 +9,17 @@ Orchestrates the full analysis pipeline:
         → rules      (walks AST, emits Issues)
         → explainer  (optional: live EXPLAIN via DB connection)
         → QueryResult
-
-This module is the main integration point.  The CLI and GitHub Action
-both call run_file() or run_sql() and get back QueryResult objects.
 """
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING
 
 import sqlglot
-import sqlglot.expressions as exp
+
+if TYPE_CHECKING:
+    from qcost.explainer import ExplainResult
 
 from qcost.config import Config
 from qcost.extractors import from_file, ExtractedQuery
@@ -31,7 +30,6 @@ from qcost.rules import RULES, SCORE_MAP
 
 log = logging.getLogger(__name__)
 
-# sqlglot dialect names differ slightly from our DBType values.
 _DIALECT_MAP = {
     DBType.POSTGRES: "postgres",
     DBType.MYSQL:    "mysql",
@@ -81,14 +79,12 @@ def _analyse_one(q: ExtractedQuery, cfg: Config) -> QueryResult:
         issues=issues,
     )
 
-    # Live EXPLAIN mode — best-effort, never fatal.
     if cfg.db.dsn:
         try:
-            from qcost.explainer import run as explain_run  # lazy import
-            plan = explain_run(cfg.db.dsn, cfg.db.type, q.sql)
+            from qcost.explainer import run as explain_run, ExplainResult
+            plan: ExplainResult = explain_run(cfg.db.dsn, cfg.db.type, q.sql)
             result.explain_plan   = plan.plan_text
             result.estimated_rows = plan.estimated_rows
-            # Let real planner data override heuristic score when worse.
             explain_score = _score_from_explain(plan, cfg)
             if explain_score > score:
                 result.score = explain_score
@@ -100,15 +96,10 @@ def _analyse_one(q: ExtractedQuery, cfg: Config) -> QueryResult:
 
 
 def _heuristic(sql: str, dialect: str) -> tuple[list[Issue], int]:
-    """
-    Parse *sql* with sqlglot and run every rule in RULES.
-    Returns (issues, composite_score).
-    """
     try:
         ast = sqlglot.parse_one(sql, dialect=dialect, error_level=sqlglot.ErrorLevel.WARN)
     except sqlglot.errors.ParseError as exc:
         log.debug("sqlglot parse error (%s): %s", dialect, exc)
-        # Graceful degradation: return a single parse-error issue.
         issue = Issue(
             code="PARSE_ERROR",
             severity=CostTier.LOW,
@@ -124,7 +115,6 @@ def _heuristic(sql: str, dialect: str) -> tuple[list[Issue], int]:
         except Exception as exc:
             log.debug("Rule %s raised: %s", rule.__name__, exc)
 
-    # Deduplicate by code (some rules may fire multiple times for nested queries).
     seen: set[str] = set()
     deduped: list[Issue] = []
     for issue in issues:
@@ -136,7 +126,7 @@ def _heuristic(sql: str, dialect: str) -> tuple[list[Issue], int]:
     return deduped, score
 
 
-def _score_from_explain(plan: "ExplainResult", cfg: Config) -> int:  # type: ignore[name-defined]
+def _score_from_explain(plan: "ExplainResult", cfg: Config) -> int:
     score = 0
     if plan.estimated_rows > cfg.thresholds.max_rows:
         score += 40

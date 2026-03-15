@@ -1,8 +1,7 @@
 """
 qcost.models
-~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~
 Shared data structures used across the entire package.
-Kept as plain dataclasses so they serialise cleanly to JSON.
 """
 from __future__ import annotations
 
@@ -38,20 +37,20 @@ class Issue:
     severity:   CostTier
     message:    str
     suggestion: str
-    line:       int = 0   # 1-based line within the query string; 0 = unknown
+    line:       int = 0
 
 
 @dataclass
 class QueryResult:
     query:          str
     file:           str
-    line:           int        # 1-based line in the source file
+    line:           int
     db_type:        DBType
     tier:           CostTier
-    score:          int        # 0–100 composite cost score
+    score:          int
     issues:         list[Issue] = field(default_factory=list)
     explain_plan:   Optional[str] = None
-    estimated_rows: int = -1   # -1 = unknown (heuristic mode)
+    estimated_rows: int = -1
 
 
 @dataclass
@@ -63,7 +62,10 @@ class Report:
 
 
 def score_to_tier(score: int) -> CostTier:
-    if score >= 70: return CostTier.CRITICAL
-    if score >= 45: return CostTier.HIGH
-    if score >= 20: return CostTier.MEDIUM
+    if score >= 70:
+        return CostTier.CRITICAL
+    if score >= 45:
+        return CostTier.HIGH
+    if score >= 20:
+        return CostTier.MEDIUM
     return CostTier.LOW
