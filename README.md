@@ -1,25 +1,21 @@
 # qcost
 
-> Query cost predictor for your PR pipeline. Know the execution cost of every SQL query before it reaches production.
+> SQL query cost predictor for your PR pipeline. Know the execution cost of every SQL query before it reaches production.
 
 [![CI](https://github.com/ParanoidParrot/qcost/actions/workflows/ci.yml/badge.svg)](https://github.com/ParanoidParrot/qcost/actions)
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/ParanoidParrot/qcost/blob/main/LICENSE)
-
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
-
 [![sqlglot](https://img.shields.io/badge/parser-sqlglot-orange)](https://github.com/tobymao/sqlglot)
-
 
 ---
 
 ## What it does
 
-**qcost** scans SQL queries in your pull requests — in `.sql` files, Python, Go, and TypeScript source — predicts their execution cost using static AST analysis, and posts a structured cost report as a PR comment. It can optionally connect to a staging database and run real `EXPLAIN` analysis.
+**qcost** scans SQL queries in your pull requests — in `.sql` files, Python, Go, and TypeScript source — predicts their execution cost using AST-based static analysis, and posts a structured cost report as a PR comment.
 
-It uses [sqlglot](https://github.com/tobymao/sqlglot) for dialect-aware SQL parsing, which means it understands the difference between Postgres, MySQL, and SQLite syntax — and won't false-positive on valid dialect-specific constructs.
+It uses [sqlglot](https://github.com/tobymao/sqlglot) for dialect-aware SQL parsing. Rules operate on actual AST nodes — not regex over raw SQL text — which means fewer false positives and precise dialect-specific analysis for Postgres, MySQL, and SQLite.
 
-**It predicts cost issues like:**
+**Detects:**
 - Full table scans (`SELECT id FROM users` with no WHERE or LIMIT)
 - Cartesian products (comma-separated FROM or JOIN without ON)
 - Leading wildcard `LIKE` (`LIKE '%term'` — always a full scan)
@@ -30,19 +26,11 @@ It uses [sqlglot](https://github.com/tobymao/sqlglot) for dialect-aware SQL pars
 
 ---
 
-## Example PR comment
+## Demo
 
-```
-## 🔍 QCost Report
+> Open a PR that adds a query — qcost comments automatically.
 
-![fail](https://img.shields.io/badge/gate-FAIL-red)  Total cost score: 88   Queries analysed: 3
-
-| File | Query | Tier | Score | Issues |
-|------|-------|------|-------|--------|
-| migrations/001.sql:4 | SELECT * FROM users | 🔴 CRITICAL | 45 | 2 |
-| db/queries.py:88     | SELECT id FROM events ORDER... | 🟠 HIGH | 28 | 1 |
-| db/queries.py:102    | SELECT id FROM users WHERE LOWER... | 🟡 MEDIUM | 15 | 1 |
-```
+![qcost PR comment demo](docs/demo.png)
 
 ---
 
@@ -68,7 +56,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: your-username/qcost@v1
+      - uses: ParanoidParrot/qcost@v1
         with:
           db-type: postgres
           fail-on-high: 'true'
@@ -76,10 +64,8 @@ jobs:
 
 ### With live EXPLAIN (optional)
 
-Point qcost at a staging database to get real planner cost figures instead of heuristic estimates:
-
 ```yaml
-      - uses: your-username/qcost@v1
+      - uses: ParanoidParrot/qcost@v1
         with:
           db-type: postgres
           dsn: ${{ secrets.STAGING_DB_DSN }}
@@ -113,23 +99,21 @@ scan:
 
 output:
   format: text          # text | json | markdown
-  verbose: false        # include EXPLAIN plan in output (requires dsn)
+  verbose: false
 ```
 
 ---
 
 ## Cost scoring
 
-Each detected issue adds penalty points to a 0–100 score:
-
 | Issue | Penalty | Why |
 |-------|---------|-----|
 | Cartesian join | +40 | Multiplies row count of every joined table |
 | Full table scan | +30 | Reads every row with no filter |
-| Leading wildcard LIKE | +25 | Can't use B-tree index |
+| Leading wildcard LIKE | +25 | Cannot use B-tree index |
 | Function on indexed column | +20 | Index unusable when column is wrapped |
 | Subquery in WHERE | +15 | May execute once per outer row |
-| SELECT * | +15 | Fetches unused columns incl. large BLOBs |
+| SELECT * | +15 | Fetches unused columns including large BLOBs |
 | ORDER BY without LIMIT | +8 | Full sort of result set |
 | Implicit type cast | +10 | Forces per-row cast, index skipped |
 | OR in WHERE | +5 | May prevent index use |
@@ -140,8 +124,6 @@ Each detected issue adds penalty points to a 0–100 score:
 | 20–44 | Medium | 🟡 |
 | 45–69 | High | 🟠 |
 | 70–100 | Critical | 🔴 |
-
-In live EXPLAIN mode, real planner row estimates and total cost override the heuristic score when higher.
 
 ---
 
@@ -161,10 +143,14 @@ In live EXPLAIN mode, real planner row estimates and total cost override the heu
 
 ## Why Python
 
-qcost uses [sqlglot](https://github.com/tobymao/sqlglot) for SQL parsing. sqlglot produces a full AST for 20+ SQL dialects, which means rules operate on actual parse tree nodes — not regex over raw SQL text. This eliminates false positives that plague string-matching approaches: a `LIKE '%term'` inside a comment won't fire the wildcard rule; a `LOWER()` call on a literal won't fire the function-on-column rule.
+qcost uses [sqlglot](https://github.com/tobymao/sqlglot) for SQL parsing, which produces a full AST for 20+ SQL dialects. Rules operate on actual parse tree nodes rather than regex over raw SQL. This eliminates false positives — a `LIKE '%term'` inside a comment won't fire the wildcard rule; a `LOWER()` call on a literal won't fire the function-on-column rule.
 
 ---
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add rules and run tests locally.
+
 ## License
 
-MIT
+[MIT](LICENSE)

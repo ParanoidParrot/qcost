@@ -21,19 +21,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Debug — show repo structure
-        run: |
-          echo "=== root ===" && ls -la
-          echo "=== qcost/ ===" && ls -la qcost/ || echo "qcost/ dir MISSING"
-          echo "=== qcost/__init__.py ===" && cat qcost/__init__.py || echo "__init__.py MISSING"
-
-      - name: Install package
+      - name: Install package and dev dependencies
         run: pip install --no-cache-dir -e ".[dev]"
-
-      - name: Debug — show install location
-        run: |
-          python -c "import qcost; print('file:', getattr(qcost, '__file__', 'UNKNOWN'))"
-          pip show qcost
 
       - name: Verify imports
         run: python -c "from qcost import run_file, run_sql, build_report; print('imports ok')"
@@ -57,33 +46,13 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Debug — show repo structure
-        run: |
-          echo "=== root ===" && ls -la
-          echo "=== qcost/ ===" && ls -la qcost/ || echo "qcost/ dir MISSING"
-          echo "=== qcost/__init__.py ===" && cat qcost/__init__.py || echo "__init__.py MISSING"
-
       - name: Install package
         run: pip install --no-cache-dir -e ".[dev]"
-
-      - name: Debug — show install location
-        run: |
-          python -c "import qcost; print('file:', getattr(qcost, '__file__', 'UNKNOWN'))"
-          pip show qcost
 
       - name: Verify imports
         run: python -c "from qcost import run_file, run_sql, build_report; print('imports ok')"
 
-      - name: Create test data
-        run: |
-          mkdir -p testdata/postgres
-          cat > testdata/postgres/bad_queries.sql << 'SQL'
-          SELECT * FROM users;
-          SELECT u.name, o.total FROM users u, orders o WHERE u.id = 1;
-          SELECT id FROM users WHERE email LIKE '%@gmail.com';
-          SQL
-
-      - name: Run self-test
+      - name: Run self-test on bad queries
         run: |
           python -c "
           from qcost import run_file, build_report
@@ -92,6 +61,21 @@ jobs:
           results = run_file('testdata/postgres/bad_queries.sql', cfg)
           report = build_report(results, cfg)
           print(f'Found {len(results)} queries, total score {report.total_cost}')
-          assert len(results) > 0, 'Expected at least one query'
-          print('Self-test passed.')
+          assert len(results) > 0, 'Expected queries in bad_queries.sql'
+          assert report.total_cost > 0, 'Expected non-zero cost score for bad queries'
+          print('bad queries self-test passed.')
+          "
+
+      - name: Run self-test on good queries
+        run: |
+          python -c "
+          from qcost import run_file, build_report
+          from qcost.config import Config
+          cfg = Config()
+          results = run_file('testdata/postgres/good_queries.sql', cfg)
+          report = build_report(results, cfg)
+          print(f'Found {len(results)} queries, total score {report.total_cost}')
+          assert len(results) > 0, 'Expected queries in good_queries.sql'
+          assert report.pass_gate, f'Good queries should pass gate, got score {report.total_cost}'
+          print('good queries self-test passed.')
           "
