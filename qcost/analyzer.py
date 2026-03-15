@@ -81,7 +81,7 @@ def _analyse_one(q: ExtractedQuery, cfg: Config) -> QueryResult:
 
     if cfg.db.dsn:
         try:
-            from qcost.explainer import run as explain_run, ExplainResult
+            from qcost.explainer import run as explain_run
             plan: ExplainResult = explain_run(cfg.db.dsn, cfg.db.type, q.sql)
             result.explain_plan   = plan.plan_text
             result.estimated_rows = plan.estimated_rows
