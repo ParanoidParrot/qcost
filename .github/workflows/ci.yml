@@ -20,14 +20,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
 
       - name: Install package and dev dependencies
+        run: pip install --no-cache-dir -e ".[dev]"
+
+      - name: Debug install location
         run: |
-          pip install -e ".[dev]"
+          python -c "import qcost; print('location:', qcost.__file__)"
           pip show qcost
 
-      - name: Verify import
+      - name: Verify imports
         run: python -c "from qcost import run_file, run_sql, build_report; print('imports ok')"
 
       - name: Lint
@@ -48,14 +50,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
 
       - name: Install package
-        run: |
-          pip install -e ".[dev]"
-          pip show qcost
+        run: pip install --no-cache-dir -e ".[dev]"
 
-      - name: Verify import
+      - name: Debug install location
+        run: python -c "import qcost; print('location:', qcost.__file__)"
+
+      - name: Verify imports
         run: python -c "from qcost import run_file, run_sql, build_report; print('imports ok')"
 
       - name: Create test data

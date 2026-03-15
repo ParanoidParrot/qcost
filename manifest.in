@@ -1,0 +1,3 @@
+recursive-include qcost *.py
+recursive-exclude tests *
+recursive-exclude testdata *

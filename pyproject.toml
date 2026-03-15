@@ -25,9 +25,13 @@ dev = [
     "types-PyYAML",
 ]
 
+[tool.setuptools]
+package-dir = {"" = "."}
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["qcost*"]
+exclude = ["tests*", "action*", "testdata*"]
 
 [tool.ruff]
 line-length = 100
