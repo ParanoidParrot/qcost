@@ -4,9 +4,12 @@
 
 [![CI](https://github.com/ParanoidParrot/qcost/actions/workflows/ci.yml/badge.svg)](https://github.com/ParanoidParrot/qcost/actions)
 
-[![PyPI](https://img.shields.io/pypi/v/qcost)](https://pypi.org/project/qcost/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/ParanoidParrot/qcost/blob/main/LICENSE)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+
+[![sqlglot](https://img.shields.io/badge/parser-sqlglot-orange)](https://github.com/tobymao/sqlglot)
+
 
 ---
 
