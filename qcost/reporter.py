@@ -1,0 +1,152 @@
+"""
+qcost.reporter
+~~~~~~~~~~~~~~~~~~~~
+Three output formats:
+  text     — colourful terminal output via `rich`
+  json     — machine-readable for VS Code / other tooling
+  markdown — GitHub PR comment format
+"""
+from __future__ import annotations
+
+import dataclasses
+import json
+from typing import Any
+
+from rich.console import Console
+from rich.table import Table
+from rich import box
+from rich.text import Text
+
+from qcost.models import CostTier, QueryResult, Report, TIER_EMOJI
+
+_TIER_COLOR = {
+    CostTier.CRITICAL: "bold red",
+    CostTier.HIGH:     "bold yellow",
+    CostTier.MEDIUM:   "yellow",
+    CostTier.LOW:      "green",
+}
+
+console = Console(highlight=False)
+
+
+# ── Text ──────────────────────────────────────────────────────────────────────
+
+def text(report: Report, verbose: bool = False) -> None:
+    """Print a rich terminal report to stdout."""
+    if not report.results:
+        console.print("[green]✅  No queries found to analyze.[/green]")
+        return
+
+    for r in report.results:
+        emoji  = TIER_EMOJI[r.tier]
+        color  = _TIER_COLOR[r.tier]
+        loc    = f"{r.file}:{r.line}" if r.line else r.file
+        snippet = r.query[:100].replace("\n", " ") + ("…" if len(r.query) > 100 else "")
+
+        console.rule()
+        console.print(
+            f"{emoji}  [{color}]{r.tier.upper()}[/{color}]  "
+            f"score={r.score}  [dim]{loc}[/dim]"
+        )
+        console.print(f"  [dim italic]{snippet}[/dim italic]")
+
+        for issue in r.issues:
+            console.print(f"  • [bold]{issue.code}[/bold]: {issue.message}")
+            console.print(f"    [dim]↳ {issue.suggestion}[/dim]")
+
+        if verbose and r.explain_plan:
+            console.print("\n  [dim]EXPLAIN output:[/dim]")
+            for line in r.explain_plan.splitlines():
+                console.print(f"  [dim]| {line}[/dim]")
+
+    console.rule()
+    if report.pass_gate:
+        console.print(
+            f"[bold green]✅  Gate: PASS[/bold green]  "
+            f"(total score: {report.total_cost})"
+        )
+    else:
+        console.print(
+            f"[bold red]❌  Gate: FAIL[/bold red]  "
+            f"(total score: {report.total_cost})"
+        )
+
+
+# ── JSON ──────────────────────────────────────────────────────────────────────
+
+def as_json(report: Report) -> str:
+    """Serialise the full report to pretty-printed JSON."""
+    def _default(obj: Any) -> Any:
+        if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+            return dataclasses.asdict(obj)
+        if hasattr(obj, "value"):   # Enum
+            return obj.value
+        raise TypeError(f"Not serialisable: {type(obj)}")
+
+    return json.dumps(dataclasses.asdict(report), indent=2, default=_default)
+
+
+# ── Markdown ──────────────────────────────────────────────────────────────────
+
+def markdown(report: Report, verbose: bool = False) -> str:
+    """Return a GitHub PR comment in Markdown."""
+    lines: list[str] = []
+
+    lines.append("## 🔍 QCost Report\n")
+
+    if not report.results:
+        lines.append("✅ No queries detected in this PR.\n")
+        return "\n".join(lines)
+
+    # Summary badge.
+    if report.pass_gate:
+        badge = "![pass](https://img.shields.io/badge/gate-PASS-brightgreen)"
+    else:
+        badge = "![fail](https://img.shields.io/badge/gate-FAIL-red)"
+
+    lines.append(
+        f"{badge} &nbsp; **Total cost score: {report.total_cost}**"
+        f" &nbsp; **Queries analysed: {len(report.results)}**\n"
+    )
+
+    # Summary table.
+    lines.append("| File | Query | Tier | Score | Issues |")
+    lines.append("|------|-------|------|-------|--------|")
+    for r in report.results:
+        loc     = f"{r.file}:{r.line}" if r.line else r.file
+        snippet = r.query.replace("\n", " ").replace("|", "\\|")[:60]
+        if len(r.query) > 60:
+            snippet += "…"
+        emoji = TIER_EMOJI[r.tier]
+        lines.append(
+            f"| `{loc}` | `{snippet}` "
+            f"| {emoji} {r.tier.upper()} | {r.score} | {len(r.issues)} |"
+        )
+
+    lines.append("")
+
+    # Per-query expandable details.
+    for r in report.results:
+        if not r.issues:
+            continue
+        loc = f"{r.file}:{r.line}" if r.line else r.file
+        lines.append(
+            f"<details>\n"
+            f"<summary>{TIER_EMOJI[r.tier]}  {loc} — {len(r.issues)} issue(s)</summary>\n"
+        )
+        lines.append(f"**Query:**\n```sql\n{r.query}\n```\n")
+        lines.append("**Issues:**\n")
+        for issue in r.issues:
+            lines.append(
+                f"- **`{issue.code}`** ({issue.severity.upper()}): {issue.message}\n"
+                f"  > 💡 {issue.suggestion}\n"
+            )
+        if verbose and r.explain_plan:
+            lines.append(f"**EXPLAIN plan:**\n```\n{r.explain_plan}\n```\n")
+        lines.append("</details>\n")
+
+    lines.append("---")
+    lines.append(
+        "*Generated by [QCost](https://github.com/your-username/qcost)*"
+    )
+    return "\n".join(lines)

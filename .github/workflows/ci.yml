@@ -21,12 +21,18 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install package and dev dependencies
+      - name: Debug — show repo structure
+        run: |
+          echo "=== root ===" && ls -la
+          echo "=== qcost/ ===" && ls -la qcost/ || echo "qcost/ dir MISSING"
+          echo "=== qcost/__init__.py ===" && cat qcost/__init__.py || echo "__init__.py MISSING"
+
+      - name: Install package
         run: pip install --no-cache-dir -e ".[dev]"
 
-      - name: Debug install location
+      - name: Debug — show install location
         run: |
-          python -c "import qcost; print('location:', qcost.__file__)"
+          python -c "import qcost; print('file:', getattr(qcost, '__file__', 'UNKNOWN'))"
           pip show qcost
 
       - name: Verify imports
@@ -51,11 +57,19 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Debug — show repo structure
+        run: |
+          echo "=== root ===" && ls -la
+          echo "=== qcost/ ===" && ls -la qcost/ || echo "qcost/ dir MISSING"
+          echo "=== qcost/__init__.py ===" && cat qcost/__init__.py || echo "__init__.py MISSING"
+
       - name: Install package
         run: pip install --no-cache-dir -e ".[dev]"
 
-      - name: Debug install location
-        run: python -c "import qcost; print('location:', qcost.__file__)"
+      - name: Debug — show install location
+        run: |
+          python -c "import qcost; print('file:', getattr(qcost, '__file__', 'UNKNOWN'))"
+          pip show qcost
 
       - name: Verify imports
         run: python -c "from qcost import run_file, run_sql, build_report; print('imports ok')"
