@@ -111,7 +111,7 @@ def _heuristic(sql: str, dialect: str) -> tuple[list[Issue], int]:
     issues: list[Issue] = []
     for rule in RULES:
         try:
-            issues.extend(rule(ast, dialect))
+            issues.extend(rule(ast, dialect))  # type: ignore[arg-type]
         except Exception as exc:
             log.debug("Rule %s raised: %s", rule.__name__, exc)
 

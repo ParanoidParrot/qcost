@@ -1,0 +1,126 @@
+name: QCost PR Analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  analyze:
+    name: Analyze query cost
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install qcost
+        run: pip install --no-cache-dir -e ".[dev]"
+
+      - name: Get changed files
+        id: changed
+        run: |
+          BASE="${{ github.event.pull_request.base.ref }}"
+          git fetch origin $BASE
+          FILES=$(git diff --name-only --diff-filter=ACM origin/$BASE...HEAD \
+            | grep -E '\.(sql|py|go|ts|tsx|js|jsx)$' || true)
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "count=$(echo "$FILES" | grep -c . || echo 0)" >> $GITHUB_OUTPUT
+
+      - name: Run qcost analysis
+        id: qcost
+        if: steps.changed.outputs.count != '0'
+        run: |
+          python -c "
+          import sys, os
+          from qcost import run_file, build_report
+          from qcost import reporter
+          from qcost.config import Config
+
+          files = '''${{ steps.changed.outputs.files }}'''.strip().splitlines()
+          files = [f.strip() for f in files if f.strip()]
+
+          if not files:
+              print('No analyzable files changed.')
+              sys.exit(0)
+
+          cfg = Config()
+          all_results = []
+          for f in files:
+              if os.path.exists(f):
+                  try:
+                      all_results.extend(run_file(f, cfg))
+                  except Exception as e:
+                      print(f'Warning: could not analyze {f}: {e}')
+
+          report = build_report(all_results, cfg)
+          md = reporter.markdown(report)
+
+          with open('qcost_report.md', 'w') as out:
+              out.write(md)
+
+          print(f'Analyzed {len(all_results)} queries.')
+          print(f'Gate passed: {report.pass_gate}')
+          print(f'Total score: {report.total_cost}')
+
+          if not report.pass_gate:
+              sys.exit(1)
+          "
+
+      - name: Post PR comment
+        if: always() && steps.changed.outputs.count != '0'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            let body;
+            try {
+              body = fs.readFileSync('qcost_report.md', 'utf8');
+            } catch(e) {
+              body = '## 🔍 QCost Report\n\nNo analyzable SQL queries found in this PR.';
+            }
+
+            const marker = '<!-- qcost-report -->';
+            const fullBody = marker + '\n' + body;
+
+            // Find and update existing comment if present
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.data.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: fullBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: fullBody,
+              });
+            }
+
+      - name: Fail if gate failed
+        if: steps.qcost.outcome == 'failure'
+        run: |
+          echo "❌ qcost gate failed — expensive queries detected in this PR."
+          exit 1

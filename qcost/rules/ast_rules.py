@@ -39,7 +39,7 @@ def _has_limit(node: exp.Expression) -> bool:
 
 
 def _select_columns(node: exp.Select) -> list[exp.Expression]:
-    return list(node.selects)
+    return list(node.selects)  # type: ignore[arg-type]
 
 
 # ── Rules ─────────────────────────────────────────────────────────────────────
