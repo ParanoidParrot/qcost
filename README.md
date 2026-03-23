@@ -30,7 +30,8 @@ It uses [sqlglot](https://github.com/tobymao/sqlglot) for dialect-aware SQL pars
 
 > Open a PR that adds a query — qcost comments automatically.
 
-![qcost PR comment demo](docs/demo.png)
+<img width="1340" height="764" alt="Screenshot 2026-03-24 at 1 19 35 AM" src="https://github.com/user-attachments/assets/415d89d3-a3f1-4692-9144-ed9af463e974" />
+
 
 ---
 
