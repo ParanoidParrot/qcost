@@ -22,11 +22,17 @@ if TYPE_CHECKING:
     from qcost.explainer import ExplainResult
 
 from qcost.config import Config
-from qcost.extractors import from_file, ExtractedQuery
+from qcost.extractors import ExtractedQuery, from_file
 from qcost.models import (
-    CostTier, DBType, Issue, QueryResult, Report, score_to_tier,
+    CostTier,
+    DBType,
+    Issue,
+    QueryResult,
+    Report,
+    ScoreSource,
+    score_to_tier,
 )
-from qcost.rules import RULES, SCORE_MAP
+from qcost.rules import RULES, SCORE_MAP, STRUCTURAL_CODES
 
 log = logging.getLogger(__name__)
 
@@ -66,33 +72,110 @@ def build_report(results: list[QueryResult], cfg: Config) -> Report:
 
 def _analyse_one(q: ExtractedQuery, cfg: Config) -> QueryResult:
     dialect = _DIALECT_MAP[cfg.db.type]
-    issues, score = _heuristic(q.sql, dialect)
-    tier = score_to_tier(score)
+    issues, heuristic_score = _heuristic(q.sql, dialect)
 
     result = QueryResult(
         query=q.sql,
         file=q.file,
         line=q.line,
         db_type=cfg.db.type,
-        tier=tier,
-        score=score,
+        tier=score_to_tier(heuristic_score),
+        score=heuristic_score,
+        heuristic_score=heuristic_score,
         issues=issues,
+        score_source=ScoreSource.HEURISTIC,
     )
 
-    if cfg.db.dsn:
-        try:
-            from qcost.explainer import run as explain_run
-            plan: ExplainResult = explain_run(cfg.db.dsn, cfg.db.type, q.sql)
-            result.explain_plan   = plan.plan_text
-            result.estimated_rows = plan.estimated_rows
-            explain_score = _score_from_explain(plan, cfg)
-            if explain_score > score:
-                result.score = explain_score
-                result.tier  = score_to_tier(explain_score)
-        except Exception as exc:
-            log.debug("EXPLAIN failed for %s:%d — %s (using heuristic)", q.file, q.line, exc)
+    if not cfg.db.dsn:
+        return result
+
+    try:
+        from qcost.explainer import run as explain_run
+        plan: ExplainResult = explain_run(cfg.db.dsn, cfg.db.type, q.sql)
+    except Exception as exc:
+        # A configured DSN that does not work is a setup error the user needs
+        # to see — silently falling back to heuristics makes a broken
+        # connection indistinguishable from a working one.
+        log.warning(
+            "EXPLAIN failed for %s:%d (%s) — falling back to heuristic score",
+            q.file, q.line, exc,
+        )
+        return result
+
+    result.explain_plan   = plan.plan_text
+    result.estimated_rows = plan.estimated_rows
+    result.planner_cost   = plan.planner_cost
+
+    explain_score = _score_from_explain(plan, cfg)
+    result.score, result.score_source = _reconcile(
+        heuristic_score, explain_score, plan, issues, cfg
+    )
+    result.tier = score_to_tier(result.score)
+
+    if result.score < heuristic_score:
+        log.info(
+            "%s:%d — plan lowered score %d → %d (planner_cost=%.1f, rows=%d)",
+            q.file, q.line, heuristic_score, result.score,
+            plan.planner_cost, plan.estimated_rows,
+        )
 
     return result
+
+
+def _reconcile(
+    heuristic_score: int,
+    explain_score: int,
+    plan: ExplainResult,
+    issues: list[Issue],
+    cfg: Config,
+) -> tuple[int, ScoreSource]:
+    """Combine the static score with the live planner's verdict.
+
+    The planner has measured this query against real table statistics, so when
+    it reports the query as inexpensive it is better evidence than a static
+    guess — a leading-wildcard LIKE against a 200-row lookup table is not a
+    problem, however much the AST rule dislikes it.
+
+    Structural defects are the exception: see STRUCTURAL_CODES.
+    """
+    structural_floor = min(
+        100,
+        sum(SCORE_MAP.get(i.code, 5) for i in issues if i.code in STRUCTURAL_CODES),
+    )
+
+    if _plan_says_cheap(plan, cfg):
+        adjusted = max(explain_score, structural_floor)
+        if adjusted < heuristic_score:
+            return adjusted, ScoreSource.PLAN_CHEAP
+        return heuristic_score, ScoreSource.HEURISTIC
+
+    if explain_score > heuristic_score:
+        return explain_score, ScoreSource.PLAN
+
+    return heuristic_score, ScoreSource.HEURISTIC
+
+
+def _plan_says_cheap(plan: ExplainResult, cfg: Config) -> bool:
+    """True only when the planner gives a trustworthy, genuinely cheap verdict.
+
+    Row and cost estimates of -1 mean 'unknown', which is never grounds for
+    discounting a heuristic finding.
+    """
+    row_ceiling = max(1, cfg.thresholds.max_rows // 10)
+
+    # Postgres reports a real planner cost; require both signals to agree.
+    if plan.planner_cost >= 0:
+        return (
+            plan.planner_cost < cfg.thresholds.cheap_cost
+            and 0 <= plan.estimated_rows < row_ceiling
+        )
+
+    # MySQL exposes no cost, but a concrete row estimate is still a signal.
+    #
+    # SQLite's EXPLAIN QUERY PLAN reports neither cost nor row estimates — the
+    # explainer uses 2**31 as a full-scan sentinel and -1 for unknown, and both
+    # fall outside this range, so SQLite can never justify lowering a score.
+    return 0 <= plan.estimated_rows < row_ceiling
 
 
 def _heuristic(sql: str, dialect: str) -> tuple[list[Issue], int]:
@@ -126,16 +209,19 @@ def _heuristic(sql: str, dialect: str) -> tuple[list[Issue], int]:
     return deduped, score
 
 
-def _score_from_explain(plan: "ExplainResult", cfg: Config) -> int:
+def _score_from_explain(plan: ExplainResult, cfg: Config) -> int:
+    """Score a query from planner statistics alone. -1 means 'unknown'."""
     score = 0
-    if plan.estimated_rows > cfg.thresholds.max_rows:
-        score += 40
-    elif plan.estimated_rows > cfg.thresholds.max_rows // 10:
-        score += 20
-    if plan.planner_cost > 100_000:
-        score += 40
-    elif plan.planner_cost > 10_000:
-        score += 20
-    elif plan.planner_cost > 1_000:
-        score += 10
+    if plan.estimated_rows >= 0:
+        if plan.estimated_rows > cfg.thresholds.max_rows:
+            score += 40
+        elif plan.estimated_rows > cfg.thresholds.max_rows // 10:
+            score += 20
+    if plan.planner_cost >= 0:
+        if plan.planner_cost > 100_000:
+            score += 40
+        elif plan.planner_cost > 10_000:
+            score += 20
+        elif plan.planner_cost > 1_000:
+            score += 10
     return min(100, score)

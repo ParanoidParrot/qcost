@@ -25,6 +25,10 @@ class Thresholds:
     fail_score: int = 75
     warn_score: int = 40
     max_rows:   int = 500_000
+    # Planner cost below which a live EXPLAIN is allowed to *lower* a
+    # heuristic score. Postgres `Total Cost` units. Only applies when a DSN
+    # is configured and the planner reports a real cost.
+    cheap_cost: float = 1_000.0
 
 
 @dataclass
@@ -83,6 +87,8 @@ def load(path: str | Path = ".qcost.yml") -> Config:
             cfg.thresholds.warn_score = int(v)
         if v := th.get("max_rows"):
             cfg.thresholds.max_rows = int(v)
+        if (v := th.get("cheap_cost")) is not None:
+            cfg.thresholds.cheap_cost = float(v)
 
     if sc := raw.get("scan"):
         if v := sc.get("include"):

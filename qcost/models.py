@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 
 class DBType(str, Enum):
@@ -40,6 +39,13 @@ class Issue:
     line:       int = 0
 
 
+class ScoreSource(str, Enum):
+    """Where a query's final score came from."""
+    HEURISTIC   = "heuristic"      # static AST rules only
+    PLAN        = "plan"           # live EXPLAIN raised the score
+    PLAN_CHEAP  = "plan-cheap"     # live EXPLAIN lowered the score
+
+
 @dataclass
 class QueryResult:
     query:          str
@@ -49,8 +55,13 @@ class QueryResult:
     tier:           CostTier
     score:          int
     issues:         list[Issue] = field(default_factory=list)
-    explain_plan:   Optional[str] = None
+    explain_plan:   str | None = None
     estimated_rows: int = -1
+    planner_cost:   float = -1.0
+    # Score from the static rules alone, kept for comparison when a live
+    # EXPLAIN plan overrides it in either direction.
+    heuristic_score: int = -1
+    score_source:   ScoreSource = ScoreSource.HEURISTIC
 
 
 @dataclass

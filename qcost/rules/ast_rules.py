@@ -14,9 +14,8 @@ Rules are collected in RULES and run by the analyzer.
 """
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
-import sqlglot
 import sqlglot.expressions as exp
 
 from qcost.models import CostTier, Issue
@@ -231,20 +230,21 @@ def rule_implicit_type_cast(ast: exp.Expression, dialect: str) -> list[Issue]:
     """
     Comparing a typed column to a literal of a different type forces an
     implicit cast on every row.  e.g. WHERE int_col = '42' (string literal).
-    sqlglot's type inference (available for Postgres/MySQL) makes this detectable.
+
+    NOTE: without a schema this rule cannot know a column's real type, so it
+    infers intent from the column *name* — a name containing "id", "count",
+    "num", "qty", "amount" or "price" compared against a string literal.
+    That means it misses differently-named numeric columns, and can false
+    positive on genuinely textual columns such as `external_id`. Proper
+    detection needs schema-aware type annotation (sqlglot's
+    optimizer.annotate_types) or a live connection.
+
     Only runs for postgres and mysql dialects.
     """
     if dialect not in ("postgres", "mysql"):
         return []
 
     issues = []
-    # Annotate types so we can compare.
-    try:
-        annotated = sqlglot.parse_one(ast.sql(dialect=dialect), dialect=dialect)
-        annotated = annotated  # type-annotated AST
-    except Exception:
-        return []
-
     for eq in ast.find_all(exp.EQ):
         left, right = eq.left, eq.right
         if not isinstance(left, exp.Column):
@@ -288,6 +288,20 @@ RULES: list[RuleFn] = [
     rule_or_in_where,
     rule_implicit_type_cast,
 ]
+
+# Codes that describe a *structural* defect rather than a cost prediction.
+#
+# A query planner running against a small, empty, or non-production dataset
+# will happily report a cartesian product as cheap — it is cheap, on ten rows.
+# It is still a bug, and it scales as O(n*m). These codes therefore keep their
+# full penalty even when a live EXPLAIN says the query is inexpensive; every
+# other code is a prediction about execution cost that the planner is simply
+# better placed to judge.
+STRUCTURAL_CODES: frozenset[str] = frozenset({
+    "CARTESIAN_JOIN",
+    "MISSING_JOIN_CONDITION",
+})
+
 
 # Score penalty per issue code (0–100 scale, additive, capped at 100).
 SCORE_MAP: dict[str, int] = {
