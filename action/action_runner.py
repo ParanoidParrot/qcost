@@ -107,21 +107,40 @@ def post_pr_comment(token: str, repo: str, pr_number: str, body: str) -> None:
         "Content-Type":  "application/json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-    base_url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
+    # Listing and creating a comment is scoped to the issue/PR number.
+    list_url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
+    # Updating an EXISTING comment is a different endpoint: the comment id is
+    # global to the repo and the issue number is NOT part of the path.
+    # Using {list_url}/{comment_id} returns 404.
+    comment_url = f"https://api.github.com/repos/{repo}/issues/comments"
 
-    def _request(url: str, method: str, data: bytes | None = None) -> dict:
+    def _request(url: str, method: str, data: bytes | None = None):
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         with urllib.request.urlopen(req) as resp:
             return json.loads(resp.read())
 
-    # Find existing QCost comment.
+    # Find an existing QCost comment, paging through all comments. The default
+    # page size is 30, so on a busy PR the marker can fall off page one and we
+    # would post a duplicate on every run.
     existing_id: int | None = None
     try:
-        comments = _request(base_url, "GET")
-        for c in comments:
-            if marker in c.get("body", ""):
-                existing_id = c["id"]
+        page = 1
+        while existing_id is None:
+            comments = _request(f"{list_url}?per_page=100&page={page}", "GET")
+            if not comments:
                 break
+            for c in comments:
+                if marker in c.get("body", ""):
+                    existing_id = c["id"]
+                    break
+            if len(comments) < 100:
+                break
+            page += 1
+    except urllib.error.HTTPError as exc:
+        if exc.code == 403:
+            gha_log("error", "403 listing PR comments — add `permissions: pull-requests: write` to the job.")
+        else:
+            gha_log("warning", f"Could not list PR comments: HTTP {exc.code}")
     except Exception as exc:
         gha_log("warning", f"Could not list PR comments: {exc}")
 
@@ -130,13 +149,18 @@ def post_pr_comment(token: str, repo: str, pr_number: str, body: str) -> None:
 
     try:
         if existing_id:
-            _request(f"{base_url}/{existing_id}", "PATCH", payload)
+            _request(f"{comment_url}/{existing_id}", "PATCH", payload)
             gha_log("notice", "Updated existing QCost PR comment.")
         else:
-            _request(base_url, "POST", payload)
+            _request(list_url, "POST", payload)
             gha_log("notice", "Posted new QCost PR comment.")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 403:
+            gha_log("error", "403 posting PR comment — add `permissions: pull-requests: write` to the job.")
+        else:
+            gha_log("error", f"Failed to post PR comment: HTTP {exc.code} {exc.reason}")
     except Exception as exc:
-        gha_log("warning", f"Failed to post PR comment: {exc}")
+        gha_log("error", f"Failed to post PR comment: {exc}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -167,7 +191,16 @@ def main() -> None:
     analyzable = [f for f in changed if is_analyzable(f) and Path(f).exists()]
 
     if not analyzable:
-        gha_log("notice", "QCost: no analyzable files changed in this PR.")
+        if changed:
+            # Distinguish "nothing to check" from "I didn't recognise anything".
+            exts = " ".join(sorted(_SUPPORTED_EXTS))
+            gha_log(
+                "notice",
+                f"QCost: {len(changed)} changed file(s), 0 analyzable "
+                f"(supported extensions: {exts}).",
+            )
+        else:
+            gha_log("notice", "QCost: no files changed in this PR.")
         gha_output("gate-passed",  "true")
         gha_output("total-score",  "0")
         gha_output("report",       "No SQL queries detected in this PR.")
