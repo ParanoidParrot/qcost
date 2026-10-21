@@ -10,6 +10,7 @@ This script is intentionally self-contained — no CLI framework needed.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -50,15 +51,38 @@ def gha_log(level: str, message: str) -> None:
 # ── Git helpers ───────────────────────────────────────────────────────────────
 
 def get_changed_files(base_ref: str) -> list[str]:
-    """Return files changed between base_ref and HEAD."""
-    for ref in (f"{base_ref}...HEAD", f"{base_ref}..HEAD"):
-        result = subprocess.run(
-            ["git", "diff", "--name-only", "--diff-filter=ACM", ref],
-            capture_output=True, text=True,
-        )
-        if result.returncode == 0:
-            return [f.strip() for f in result.stdout.splitlines() if f.strip()]
-    gha_log("warning", f"git diff failed against {base_ref} — analyzing all supported files")
+    """Return files changed between base_ref and HEAD.
+
+    GitHub gives us a bare branch name (e.g. "main") in
+    github.event.pull_request.base.ref, but after actions/checkout the base
+    branch usually exists only as a remote-tracking ref ("origin/main").
+    Try both, and fetch the ref first in case the clone is shallow.
+    """
+    candidates = [base_ref]
+    if "/" not in base_ref:
+        candidates.append(f"origin/{base_ref}")
+
+    # Best-effort fetch so the base ref exists locally. Harmless if it fails.
+    subprocess.run(
+        ["git", "fetch", "--no-tags", "origin", base_ref],
+        capture_output=True, text=True,
+    )
+
+    for ref in candidates:
+        for spec in (f"{ref}...HEAD", f"{ref}..HEAD"):
+            result = subprocess.run(
+                ["git", "diff", "--name-only", "--diff-filter=ACM", spec],
+                capture_output=True, text=True,
+            )
+            if result.returncode == 0:
+                files = [f.strip() for f in result.stdout.splitlines() if f.strip()]
+                print(f"QCost: diffed against {ref} — {len(files)} changed file(s)", flush=True)
+                return files
+
+    gha_log(
+        "error",
+        f"Could not diff against '{base_ref}'. Is actions/checkout using fetch-depth: 0?",
+    )
     return []
 
 
@@ -118,6 +142,10 @@ def post_pr_comment(token: str, repo: str, pr_number: str, body: str) -> None:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    # Surface library-level diagnostics (EXPLAIN failures, rule crashes) in the
+    # Actions log. Without this, every log.* call in qcost/ is silently dropped.
+    logging.basicConfig(level=logging.INFO, format="QCost: %(message)s")
+
     # Read inputs.
     cfg_path     = gha_input("config",       ".qcost.yml")
     db_type_str  = gha_input("db-type",      "postgres")
