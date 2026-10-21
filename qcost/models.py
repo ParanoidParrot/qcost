@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 
 class DBType(str, Enum):
@@ -56,7 +55,7 @@ class QueryResult:
     tier:           CostTier
     score:          int
     issues:         list[Issue] = field(default_factory=list)
-    explain_plan:   Optional[str] = None
+    explain_plan:   str | None = None
     estimated_rows: int = -1
     planner_cost:   float = -1.0
     # Score from the static rules alone, kept for comparison when a live

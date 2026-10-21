@@ -22,9 +22,15 @@ if TYPE_CHECKING:
     from qcost.explainer import ExplainResult
 
 from qcost.config import Config
-from qcost.extractors import from_file, ExtractedQuery
+from qcost.extractors import ExtractedQuery, from_file
 from qcost.models import (
-    CostTier, DBType, Issue, QueryResult, Report, ScoreSource, score_to_tier,
+    CostTier,
+    DBType,
+    Issue,
+    QueryResult,
+    Report,
+    ScoreSource,
+    score_to_tier,
 )
 from qcost.rules import RULES, SCORE_MAP, STRUCTURAL_CODES
 
@@ -119,7 +125,7 @@ def _analyse_one(q: ExtractedQuery, cfg: Config) -> QueryResult:
 def _reconcile(
     heuristic_score: int,
     explain_score: int,
-    plan: "ExplainResult",
+    plan: ExplainResult,
     issues: list[Issue],
     cfg: Config,
 ) -> tuple[int, ScoreSource]:
@@ -149,7 +155,7 @@ def _reconcile(
     return heuristic_score, ScoreSource.HEURISTIC
 
 
-def _plan_says_cheap(plan: "ExplainResult", cfg: Config) -> bool:
+def _plan_says_cheap(plan: ExplainResult, cfg: Config) -> bool:
     """True only when the planner gives a trustworthy, genuinely cheap verdict.
 
     Row and cost estimates of -1 mean 'unknown', which is never grounds for
@@ -165,13 +171,11 @@ def _plan_says_cheap(plan: "ExplainResult", cfg: Config) -> bool:
         )
 
     # MySQL exposes no cost, but a concrete row estimate is still a signal.
-    if 0 <= plan.estimated_rows < row_ceiling:
-        return True
-
-    # SQLite's EXPLAIN QUERY PLAN reports neither cost nor row estimates
-    # (the explainer uses 2**31 as a full-scan sentinel), so it can never
-    # justify lowering a score.
-    return False
+    #
+    # SQLite's EXPLAIN QUERY PLAN reports neither cost nor row estimates — the
+    # explainer uses 2**31 as a full-scan sentinel and -1 for unknown, and both
+    # fall outside this range, so SQLite can never justify lowering a score.
+    return 0 <= plan.estimated_rows < row_ceiling
 
 
 def _heuristic(sql: str, dialect: str) -> tuple[list[Issue], int]:
@@ -205,7 +209,7 @@ def _heuristic(sql: str, dialect: str) -> tuple[list[Issue], int]:
     return deduped, score
 
 
-def _score_from_explain(plan: "ExplainResult", cfg: Config) -> int:
+def _score_from_explain(plan: ExplainResult, cfg: Config) -> int:
     """Score a query from planner statistics alone. -1 means 'unknown'."""
     score = 0
     if plan.estimated_rows >= 0:

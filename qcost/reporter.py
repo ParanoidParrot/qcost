@@ -11,7 +11,7 @@ from typing import Any
 
 from rich.console import Console
 
-from qcost.models import CostTier, Report, ScoreSource, TIER_EMOJI
+from qcost.models import TIER_EMOJI, CostTier, Report, ScoreSource
 
 _TIER_COLOR = {
     CostTier.CRITICAL: "bold red",

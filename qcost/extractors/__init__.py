@@ -1,3 +1,3 @@
-from qcost.extractors.source import from_file, ExtractedQuery
+from qcost.extractors.source import ExtractedQuery, from_file
 
-__all__ = ["from_file", "ExtractedQuery"]
+__all__ = ["ExtractedQuery", "from_file"]

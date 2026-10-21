@@ -10,20 +10,20 @@ from pathlib import Path
 
 import sqlglot
 
-from qcost.rules.ast_rules import (
-    rule_select_star,
-    rule_full_table_scan,
-    rule_cartesian_join,
-    rule_leading_wildcard_like,
-    rule_function_on_column_in_where,
-    rule_subquery_in_where,
-    rule_order_without_limit,
-    rule_or_in_where,
-)
-from qcost.models import CostTier
-from qcost.analyzer import run_sql, build_report
+from qcost.analyzer import build_report, run_sql
 from qcost.config import Config
 from qcost.extractors.source import from_file
+from qcost.models import CostTier
+from qcost.rules.ast_rules import (
+    rule_cartesian_join,
+    rule_full_table_scan,
+    rule_function_on_column_in_where,
+    rule_leading_wildcard_like,
+    rule_or_in_where,
+    rule_order_without_limit,
+    rule_select_star,
+    rule_subquery_in_where,
+)
 
 
 def parse(sql: str, dialect: str = "postgres"):

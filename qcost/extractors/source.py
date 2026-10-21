@@ -92,7 +92,7 @@ def _from_sql_file(path: Path) -> list[ExtractedQuery]:
         stripped = line.strip()
 
         # Skip pure comment lines.
-        if stripped.startswith("--") or stripped.startswith("/*"):
+        if stripped.startswith(("--", "/*")):
             current_line += 1
             continue
 
@@ -108,9 +108,8 @@ def _from_sql_file(path: Path) -> list[ExtractedQuery]:
         current_line += 1
 
     # Flush trailing statement without semicolon.
-    if sql := "\n".join(buf).strip():
-        if _is_meaningful(sql):
-            results.append(ExtractedQuery(sql=sql, file=str(path), line=start_line))
+    if (sql := "\n".join(buf).strip()) and _is_meaningful(sql):
+        results.append(ExtractedQuery(sql=sql, file=str(path), line=start_line))
 
     return results
 
