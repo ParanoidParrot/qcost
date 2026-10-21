@@ -289,6 +289,20 @@ RULES: list[RuleFn] = [
     rule_implicit_type_cast,
 ]
 
+# Codes that describe a *structural* defect rather than a cost prediction.
+#
+# A query planner running against a small, empty, or non-production dataset
+# will happily report a cartesian product as cheap — it is cheap, on ten rows.
+# It is still a bug, and it scales as O(n*m). These codes therefore keep their
+# full penalty even when a live EXPLAIN says the query is inexpensive; every
+# other code is a prediction about execution cost that the planner is simply
+# better placed to judge.
+STRUCTURAL_CODES: frozenset[str] = frozenset({
+    "CARTESIAN_JOIN",
+    "MISSING_JOIN_CONDITION",
+})
+
+
 # Score penalty per issue code (0–100 scale, additive, capped at 100).
 SCORE_MAP: dict[str, int] = {
     "CARTESIAN_JOIN":            40,

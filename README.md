@@ -26,6 +26,16 @@ It uses [sqlglot](https://github.com/tobymao/sqlglot) for dialect-aware SQL pars
 
 ---
 
+## Where this sits
+ 
+Most tools in this space lint **schema migrations** — [Squawk](https://github.com/sbdchd/squawk) and [Atlas](https://github.com/ariga/atlas-action) check DDL for operations that lock tables or break compatibility. qcost checks **queries**, which is a different question, and the two are complementary.
+ 
+Of the tools that do look at query cost, most target data warehouses (Snowflake, BigQuery) or are commercial platforms that require sending your queries to a hosted service. qcost is aimed at OLTP — Postgres, MySQL, SQLite — runs in your own CI, and is MIT licensed.
+ 
+It is an actively developed prototype. See [Known limitations](#known-limitations).
+ 
+---
+
 ## Demo
 
 > Open a PR that adds a query — qcost comments automatically.
@@ -105,6 +115,19 @@ output:
 
 ---
 
+## How live EXPLAIN changes the score
+ 
+Static rules have to assume the worst: a leading-wildcard `LIKE` *might* scan ten million rows. When a DSN is configured, qcost asks your database's planner instead — and the planner's answer can move the score **in either direction**.
+ 
+- **The planner says the query is cheap** → the static penalty is lowered. A `LIKE '%@corp.com'` against a 140-row lookup table is not a performance problem, and qcost stops reporting it as one.
+- **The planner says the query is expensive** → the score is raised above whatever the static rules found.
+- **No DSN, or the planner gives no usable estimate** → the static score stands unchanged.
+The PR comment states whenever a score was adjusted, and shows the planner cost and row estimate it used, so an adjustment is never silent.
+ 
+**Structural defects are never discounted.** A cartesian join against an almost-empty staging database *is* cheap today, and will still take production down when the tables grow. `CARTESIAN_JOIN` and `MISSING_JOIN_CONDITION` therefore keep their full penalty however cheap the plan looks.
+ 
+> **The plan is only as good as the statistics behind it.** A DSN pointing at a near-empty database will report almost everything as cheap and will suppress real findings. Point `dsn` at a database whose table sizes and statistics resemble production, or leave it unset and rely on static analysis.
+
 ## Cost scoring
 
 | Issue | Penalty | Why |
@@ -146,6 +169,26 @@ output:
 
 qcost uses [sqlglot](https://github.com/tobymao/sqlglot) for SQL parsing, which produces a full AST for 20+ SQL dialects. Rules operate on actual parse tree nodes rather than regex over raw SQL. This eliminates false positives — a `LIKE '%term'` inside a comment won't fire the wildcard rule; a `LOWER()` call on a literal won't fire the function-on-column rule.
 
+---
+
+## Local use
+ 
+```bash
+pip install -e .
+qcost path/to/queries.sql
+echo "SELECT * FROM users" | qcost -
+```
+
+---
+
+## Known limitations
+ 
+- `scan.include` and `scan.exclude` are parsed but not yet applied; file selection currently filters on extension only
+- `thresholds.warn_score` is accepted and validated but does not yet affect the report
+- `output.format: text` falls back to markdown when run inside the Action
+- The gate is evaluated per query, but the failure message reports the total score across all queries
+- SQLite cannot lower a score, because `EXPLAIN QUERY PLAN` exposes no cost or row estimates
+- Queries built by string concatenation or an ORM are only detected when a complete SQL literal appears in the source
 ---
 
 ## Contributing
