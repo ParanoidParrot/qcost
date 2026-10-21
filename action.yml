@@ -2,7 +2,7 @@
 
 name: 'QCost'
 description: 'SQL query cost predictor for PRs — catches expensive queries before they ship'
-#author: 'anuradhasrinivas'
+author: 'anuradhasrinivas'
 
 branding:
   icon: 'database'
@@ -42,7 +42,7 @@ inputs:
     required: false
     default: ${{ github.token }}
 
-    outputs:
+outputs:
   total-score:
     description: 'Sum of all query cost scores'
     value: ${{ steps.qcost.outputs.total-score }}
@@ -81,16 +81,17 @@ runs:
         echo "ref=$BASE" >> $GITHUB_OUTPUT
 
     - name: Run QCost
+      id: qcost
       shell: bash
       env:
         INPUT_CONFIG:       ${{ inputs.config }}
-        INPUT_DB-TYPE:      ${{ inputs.db-type }}
+        INPUT_DB_TYPE:      ${{ inputs.db-type }}
         INPUT_DSN:          ${{ inputs.dsn }}
         INPUT_FORMAT:       ${{ inputs.format }}
-        INPUT_BASE-REF:     ${{ steps.base-ref.outputs.ref }}
-        INPUT_FAIL-ON-HIGH: ${{ inputs.fail-on-high }}
-        INPUT_POST-COMMENT: ${{ inputs.post-comment }}
-        INPUT_GITHUB-TOKEN: ${{ inputs.github-token }}
+        INPUT_BASE_REF:     ${{ steps.base-ref.outputs.ref }}
+        INPUT_FAIL_ON_HIGH: ${{ inputs.fail-on-high }}
+        INPUT_POST_COMMENT: ${{ inputs.post-comment }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         GITHUB_TOKEN:       ${{ inputs.github-token }}
         PR_NUMBER:          ${{ github.event.pull_request.number }}
       run: python ${{ github.action_path }}/action/action_runner.py
